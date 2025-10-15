@@ -26,17 +26,20 @@ class CsgtSpider(scrapy.Spider):
         'CONCURRENT_REQUESTS': 1,  # Process one request at a time to maintain session
     }
     
-    def __init__(self, license_plate=None, vehicle_type="oto", *args, **kwargs):
+    def __init__(self, license_plate=None, vehicle_type="oto", max_retries=3, *args, **kwargs):
         """
         Initialize spider with search parameters
         
         Args:
             license_plate: License plate number (e.g., "30A12345")
             vehicle_type: Type of vehicle - "oto" (car), "xemay" (motorcycle), "xedapdien" (electric bike)
+            max_retries: Maximum number of captcha retry attempts (default: 3)
         """
         super(CsgtSpider, self).__init__(*args, **kwargs)
         self.license_plate = license_plate
         self.vehicle_type = vehicle_type
+        self.max_retries = int(max_retries)
+        self.retry_count = 0
         
         # Create directory for captcha images
         self.captcha_dir = Path("captcha_images")
@@ -146,7 +149,7 @@ class CsgtSpider(scrapy.Spider):
     
     def solve_captcha(self, image_path):
         """
-        Attempt to solve captcha automatically using OCR
+        Attempt to solve captcha automatically using OCR with multiple preprocessing methods
         
         Args:
             image_path: Path to captcha image
@@ -156,20 +159,107 @@ class CsgtSpider(scrapy.Spider):
         """
         try:
             import pytesseract
-            from PIL import Image
+            from PIL import Image, ImageEnhance, ImageFilter
+            from collections import Counter
             
-            # Open and preprocess image
             img = Image.open(image_path)
             
-            # Try to extract text using OCR
-            captcha_text = pytesseract.image_to_string(img, config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
-            captcha_text = captcha_text.strip()
+            # Try multiple preprocessing and OCR configurations
+            results = []
             
-            if captcha_text:
-                self.logger.info(f"OCR detected captcha text: {captcha_text}")
+            # Configuration 1: Original image, PSM 8 (single word)
+            try:
+                text = pytesseract.image_to_string(
+                    img, 
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 1 (original, psm 8): {text}")
+            except:
+                pass
+            
+            # Configuration 2: Grayscale
+            try:
+                gray = img.convert('L')
+                text = pytesseract.image_to_string(
+                    gray,
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 2 (grayscale, psm 8): {text}")
+            except:
+                pass
+            
+            # Configuration 3: High contrast
+            try:
+                gray = img.convert('L')
+                enhancer = ImageEnhance.Contrast(gray)
+                high_contrast = enhancer.enhance(2.5)
+                text = pytesseract.image_to_string(
+                    high_contrast,
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 3 (high contrast, psm 8): {text}")
+            except:
+                pass
+            
+            # Configuration 4: Binary threshold
+            try:
+                gray = img.convert('L')
+                binary = gray.point(lambda x: 255 if x > 140 else 0)
+                text = pytesseract.image_to_string(
+                    binary,
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 4 (binary threshold, psm 8): {text}")
+            except:
+                pass
+            
+            # Configuration 5: Sharpen image
+            try:
+                sharpened = img.filter(ImageFilter.SHARPEN)
+                text = pytesseract.image_to_string(
+                    sharpened,
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 5 (sharpened, psm 8): {text}")
+            except:
+                pass
+            
+            # Configuration 6: PSM 7 (single line)
+            try:
+                gray = img.convert('L')
+                enhancer = ImageEnhance.Contrast(gray)
+                high_contrast = enhancer.enhance(2.0)
+                text = pytesseract.image_to_string(
+                    high_contrast,
+                    config='--psm 7 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 6 (high contrast, psm 7): {text}")
+            except:
+                pass
+            
+            if results:
+                # Use voting - most common result
+                counter = Counter(results)
+                most_common = counter.most_common(1)[0]
+                captcha_text = most_common[0]
+                confidence = most_common[1] / len(results) * 100
+                
+                self.logger.info(f"OCR FINAL RESULT: '{captcha_text}' (confidence: {confidence:.1f}%, {most_common[1]}/{len(results)} votes)")
                 return captcha_text
             else:
-                self.logger.warning("OCR could not extract text from captcha")
+                self.logger.warning("OCR could not extract text from captcha with any configuration")
                 return None
                 
         except ImportError:
@@ -254,17 +344,33 @@ class CsgtSpider(scrapy.Spider):
             
             # Check if it's an error response
             if response_text == '404':
-                self.logger.error("Captcha verification failed! (Error 404)")
-                item = ViolationItem()
-                item['license_plate'] = response.meta.get('license_plate', self.license_plate)
-                item['vehicle_type'] = response.meta.get('vehicle_type', self.vehicle_type)
-                item['url'] = response.url
-                item['scraped_at'] = datetime.now().isoformat()
-                item['violation_found'] = False
-                item['status'] = 'error'
-                item['error_message'] = 'Captcha verification failed'
-                yield item
-                return
+                self.retry_count += 1
+                self.logger.error(f"Captcha verification failed! (Error 404) - Attempt {self.retry_count}/{self.max_retries}")
+                
+                # Retry if we haven't exceeded max retries
+                if self.retry_count < self.max_retries:
+                    self.logger.info(f"Retrying... Getting new captcha (attempt {self.retry_count + 1})")
+                    # Start over from the beginning
+                    yield scrapy.Request(
+                        url=self.start_urls[0],
+                        callback=self.parse,
+                        meta={'cookiejar': response.meta.get('cookiejar', 1)},
+                        dont_filter=True,
+                        priority=10
+                    )
+                    return
+                else:
+                    self.logger.error(f"Max retries ({self.max_retries}) exceeded. Giving up.")
+                    item = ViolationItem()
+                    item['license_plate'] = response.meta.get('license_plate', self.license_plate)
+                    item['vehicle_type'] = response.meta.get('vehicle_type', self.vehicle_type)
+                    item['url'] = response.url
+                    item['scraped_at'] = datetime.now().isoformat()
+                    item['violation_found'] = False
+                    item['status'] = 'error'
+                    item['error_message'] = f'Captcha verification failed after {self.max_retries} attempts'
+                    yield item
+                    return
             
             # Try to parse JSON response
             try:
