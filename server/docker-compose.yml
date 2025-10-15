@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  csgt-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: csgt-scraper-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # API Configuration
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_WORKERS=2
+
+      # Scraper Configuration
+      - DEFAULT_MAX_RETRIES=3
+      - DOWNLOAD_DELAY=2
+
+      # Logging
+      - LOG_LEVEL=info
+
+    volumes:
+      # Persist captcha images (optional, for debugging)
+      - ./captcha_images:/app/captcha_images
+      # Persist logs (optional)
+      - ./logs:/app/logs
+
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    networks:
+      - csgt-network
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+  # Optional: Redis for job queue (for production)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: csgt-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   networks:
+  #     - csgt-network
+
+  # Optional: Nginx reverse proxy
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: csgt-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - csgt-api
+  #   networks:
+  #     - csgt-network
+
+networks:
+  csgt-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
