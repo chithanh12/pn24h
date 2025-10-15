@@ -159,19 +159,46 @@ class CsgtSpider(scrapy.Spider):
         """
         try:
             import pytesseract
-            from PIL import Image, ImageEnhance, ImageFilter
+            from PIL import Image, ImageEnhance, ImageFilter, ImageOps
             from collections import Counter
+            import numpy as np
             
             img = Image.open(image_path)
             
+            # Save original size for later
+            original_width, original_height = img.size
+            
             # Try multiple preprocessing and OCR configurations
             results = []
+            
+            # Configuration 0: Remove gray pixels (convert to white) - BEST FOR NOISY CAPTCHAS
+            try:
+                import numpy as np
+                gray = img.convert('L')
+                img_array = np.array(gray)
+                
+                # Convert gray pixels (anything not very dark) to white
+                # Pixels darker than threshold stay black, others become white
+                threshold = 100  # Adjust this: lower = more aggressive
+                img_array = np.where(img_array > threshold, 255, 0)
+                
+                cleaned = Image.fromarray(img_array.astype('uint8'))
+                text = pytesseract.image_to_string(
+                    cleaned,
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 0 (gray removed, psm 8): {text}")
+            except Exception as e:
+                self.logger.debug(f"Config 0 failed: {e}")
+                pass
             
             # Configuration 1: Original image, PSM 8 (single word)
             try:
                 text = pytesseract.image_to_string(
                     img, 
-                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz'
                 ).strip()
                 if text and len(text) >= 4:
                     results.append(text)
@@ -184,7 +211,7 @@ class CsgtSpider(scrapy.Spider):
                 gray = img.convert('L')
                 text = pytesseract.image_to_string(
                     gray,
-                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz'
                 ).strip()
                 if text and len(text) >= 4:
                     results.append(text)
@@ -199,7 +226,7 @@ class CsgtSpider(scrapy.Spider):
                 high_contrast = enhancer.enhance(2.5)
                 text = pytesseract.image_to_string(
                     high_contrast,
-                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz'
                 ).strip()
                 if text and len(text) >= 4:
                     results.append(text)
@@ -207,18 +234,28 @@ class CsgtSpider(scrapy.Spider):
             except:
                 pass
             
-            # Configuration 4: Binary threshold
+            # Configuration 4: Remove gray pixels + sharpen
             try:
+                import numpy as np
                 gray = img.convert('L')
-                binary = gray.point(lambda x: 255 if x > 140 else 0)
+                img_array = np.array(gray)
+                
+                # More aggressive gray removal
+                img_array = np.where(img_array > 80, 255, 0)
+                cleaned = Image.fromarray(img_array.astype('uint8'))
+                
+                # Apply sharpening
+                sharpened = cleaned.filter(ImageFilter.SHARPEN)
+                
                 text = pytesseract.image_to_string(
-                    binary,
+                    sharpened,
                     config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
                 ).strip()
                 if text and len(text) >= 4:
                     results.append(text)
-                    self.logger.info(f"OCR Config 4 (binary threshold, psm 8): {text}")
-            except:
+                    self.logger.info(f"OCR Config 4 (gray removed+sharp, psm 8): {text}")
+            except Exception as e:
+                self.logger.debug(f"Config 4 failed: {e}")
                 pass
             
             # Configuration 5: Sharpen image
@@ -234,19 +271,143 @@ class CsgtSpider(scrapy.Spider):
             except:
                 pass
             
-            # Configuration 6: PSM 7 (single line)
+            # Configuration 6: Gray removal with different threshold
             try:
+                import numpy as np
                 gray = img.convert('L')
-                enhancer = ImageEnhance.Contrast(gray)
-                high_contrast = enhancer.enhance(2.0)
+                img_array = np.array(gray)
+                
+                # Try different threshold
+                img_array = np.where(img_array > 120, 255, 0)
+                cleaned = Image.fromarray(img_array.astype('uint8'))
+                
                 text = pytesseract.image_to_string(
-                    high_contrast,
-                    config='--psm 7 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                    cleaned,
+                    config='--psm 7 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz'
                 ).strip()
                 if text and len(text) >= 4:
                     results.append(text)
-                    self.logger.info(f"OCR Config 6 (high contrast, psm 7): {text}")
-            except:
+                    self.logger.info(f"OCR Config 6 (gray removed, psm 7): {text}")
+            except Exception as e:
+                self.logger.debug(f"Config 6 failed: {e}")
+                pass
+            
+            # Configuration 7: Median filter to remove noise, then gray removal
+            try:
+                gray = img.convert('L')
+                
+                # Apply median filter to remove salt-and-pepper noise
+                filtered = gray.filter(ImageFilter.MedianFilter(size=3))
+                img_array = np.array(filtered)
+                
+                # Remove gray pixels
+                img_array = np.where(img_array > 100, 255, 0)
+                cleaned = Image.fromarray(img_array.astype('uint8'))
+                
+                text = pytesseract.image_to_string(
+                    cleaned,
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 7 (median+gray removed, psm 8): {text}")
+            except Exception as e:
+                self.logger.debug(f"Config 7 failed: {e}")
+                pass
+            
+            # Configuration 8: Upscale + Gray removal (better for small/stylized fonts)
+            try:
+                # Upscale image 2x for better OCR
+                upscaled = img.resize((original_width * 2, original_height * 2), Image.LANCZOS)
+                gray = upscaled.convert('L')
+                img_array = np.array(gray)
+                
+                # Remove gray pixels
+                img_array = np.where(img_array > 100, 255, 0)
+                cleaned = Image.fromarray(img_array.astype('uint8'))
+                
+                text = pytesseract.image_to_string(
+                    cleaned,
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 8 (upscaled+gray removed, psm 8): {text}")
+            except Exception as e:
+                self.logger.debug(f"Config 8 failed: {e}")
+                pass
+            
+            # Configuration 9: Erosion to separate touching characters
+            try:
+                from scipy import ndimage
+                
+                gray = img.convert('L')
+                img_array = np.array(gray)
+                
+                # Binarize
+                img_array = np.where(img_array > 100, 255, 0)
+                
+                # Erode slightly to separate touching characters
+                img_array = ndimage.binary_erosion(img_array == 0, iterations=1).astype(np.uint8) * 255
+                img_array = 255 - img_array  # Invert back
+                
+                cleaned = Image.fromarray(img_array.astype('uint8'))
+                
+                text = pytesseract.image_to_string(
+                    cleaned,
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 9 (erosion, psm 8): {text}")
+            except Exception as e:
+                self.logger.debug(f"Config 9 failed: {e}")
+                pass
+            
+            # Configuration 10: Adaptive thresholding (better for uneven lighting)
+            try:
+                from PIL import ImageOps
+                
+                gray = img.convert('L')
+                
+                # Invert if needed
+                img_array = np.array(gray)
+                
+                # Adaptive threshold using local mean
+                from scipy import ndimage
+                local_mean = ndimage.uniform_filter(img_array.astype(float), size=15)
+                binary = img_array > local_mean - 10
+                img_array = (binary * 255).astype(np.uint8)
+                
+                cleaned = Image.fromarray(img_array)
+                
+                text = pytesseract.image_to_string(
+                    cleaned,
+                    config='--psm 8 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 10 (adaptive threshold, psm 8): {text}")
+            except Exception as e:
+                self.logger.debug(f"Config 10 failed: {e}")
+                pass
+            
+            # Configuration 11: PSM 13 (raw line, no OSD or deskewing)
+            try:
+                gray = img.convert('L')
+                img_array = np.array(gray)
+                img_array = np.where(img_array > 100, 255, 0)
+                cleaned = Image.fromarray(img_array.astype('uint8'))
+                
+                text = pytesseract.image_to_string(
+                    cleaned,
+                    config='--psm 13 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz'
+                ).strip()
+                if text and len(text) >= 4:
+                    results.append(text)
+                    self.logger.info(f"OCR Config 11 (psm 13): {text}")
+            except Exception as e:
+                self.logger.debug(f"Config 11 failed: {e}")
                 pass
             
             if results:
