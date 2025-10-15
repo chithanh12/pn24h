@@ -56,6 +56,13 @@ cd client
 - **Backend**: Python 3.9+, Scrapy, FastAPI, Tesseract OCR
 - **Frontend**: Next.js, React, TypeScript (planned)
 
+## Documentation
+
+- [Requirements Specification](./docs/requirements.md) - Detailed functional and non-functional requirements
+- [System Design](./docs/design.md) - High-level architecture and design decisions
+- [Backend API Guide](./server/API_GUIDE.md) - API endpoints and usage
+- [Docker Deployment](./server/DOCKER_DEPLOY.md) - Docker deployment instructions
+
 ## License
 
 MIT

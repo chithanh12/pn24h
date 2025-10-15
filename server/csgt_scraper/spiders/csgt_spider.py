@@ -411,14 +411,31 @@ class CsgtSpider(scrapy.Spider):
                 pass
             
             if results:
-                # Use voting - most common result
-                counter = Counter(results)
-                most_common = counter.most_common(1)[0]
-                captcha_text = most_common[0]
-                confidence = most_common[1] / len(results) * 100
+                # Filter results to only include 6-character captchas
+                valid_results = [r for r in results if len(r) == 6]
                 
-                self.logger.info(f"OCR FINAL RESULT: '{captcha_text}' (confidence: {confidence:.1f}%, {most_common[1]}/{len(results)} votes)")
-                return captcha_text
+                if valid_results:
+                    # Use voting on 6-character results
+                    counter = Counter(valid_results)
+                    most_common = counter.most_common(1)[0]
+                    captcha_text = most_common[0]
+                    confidence = most_common[1] / len(valid_results) * 100
+                    
+                    self.logger.info(f"OCR FINAL RESULT (6 chars): '{captcha_text}' (confidence: {confidence:.1f}%, {most_common[1]}/{len(valid_results)} valid votes)")
+                    return captcha_text
+                else:
+                    # No 6-character results found, log all results for debugging
+                    self.logger.warning(f"No 6-character results found. Got: {results}")
+                    self.logger.warning(f"Result lengths: {[len(r) for r in results]}")
+                    
+                    # Still use voting on whatever we got (fallback)
+                    counter = Counter(results)
+                    most_common = counter.most_common(1)[0]
+                    captcha_text = most_common[0]
+                    confidence = most_common[1] / len(results) * 100
+                    
+                    self.logger.warning(f"OCR FALLBACK RESULT: '{captcha_text}' (length: {len(captcha_text)}, confidence: {confidence:.1f}%)")
+                    return captcha_text
             else:
                 self.logger.warning("OCR could not extract text from captcha with any configuration")
                 return None
