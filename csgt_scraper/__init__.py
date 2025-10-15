@@ -1,0 +1,2 @@
+# CSGT Scraper Package
+
