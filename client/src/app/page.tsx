@@ -54,7 +54,7 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 shadow-sm">
+      <header className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-center gap-3">
             <div className="bg-blue-600 rounded-lg p-2 shadow-sm">
@@ -66,7 +66,7 @@ export default function Home() {
               <h1 className="text-xl font-bold text-gray-900">
                 🚗 Tra cứu vi phạm giao thông
               </h1>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-blue-700 mt-1 font-medium">
                 Cảnh sát giao thông Việt Nam
               </p>
             </div>
@@ -120,17 +120,17 @@ export default function Home() {
       </main>
 
       {/* Footer - Sticky at bottom */}
-      <footer className="mt-auto bg-white border-t border-gray-200">
+      <footer className="mt-auto bg-gradient-to-r from-blue-50 to-indigo-50 border-t border-blue-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="text-center text-gray-600">
-            <p className="text-sm">© 2025 Vietnamese Traffic Police Scraper</p>
-            <p className="mt-2 text-xs text-gray-500">
+          <div className="text-center text-gray-700">
+            <p className="text-sm font-medium">© 2025 Vietnamese Traffic Police Scraper</p>
+            <p className="mt-2 text-xs text-gray-600">
               Dữ liệu được tra cứu từ{' '}
               <a
                 href="https://www.csgt.vn/tra-cuu-phuong-tien-vi-pham.html"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-700 underline"
+                className="text-blue-600 hover:text-blue-700 underline font-semibold"
               >
                 website CSGT Việt Nam
               </a>
